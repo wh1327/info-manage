@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>landcros-data 租赁业务管理系统</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: { primary: '#165DFF', success: '#00B42A', warning: '#FF7D00', danger: '#F53F3F', 'gray-bg': '#F2F3F5' },
+      fontFamily: { sans: ['Inter', 'system-ui', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'] }
+    }
+  }
+}
+</script>
+<style type="text/tailwindcss">
+@layer utilities {
+  .content-auto { content-visibility: auto; }
+  .table-th { @apply px-4 py-3 text-left text-sm font-medium text-gray-600 bg-gray-bg whitespace-nowrap; }
+  .table-td { @apply px-4 py-3 text-sm text-gray-800 border-b border-gray-100 whitespace-nowrap; }
+  .form-label { @apply block text-sm font-medium text-gray-700 mb-1; }
+  .form-input { @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition; }
+  .form-input:disabled { @apply bg-gray-100 text-gray-400 cursor-not-allowed; }
+  .btn { @apply px-4 py-2 rounded-lg font-medium transition inline-flex items-center gap-2 cursor-pointer; }
+  .btn-primary { @apply btn bg-primary text-white hover:bg-primary/90; }
+  .btn-outline { @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50; }
+  .btn-danger { @apply btn bg-danger text-white hover:bg-danger/90; }
+  .btn-success { @apply btn bg-success text-white hover:bg-success/90; }
+  .btn-warning { @apply btn bg-warning text-white hover:bg-warning/90; }
+  .tab-btn { @apply px-4 py-2 text-sm font-medium rounded-lg transition whitespace-nowrap; }
+  .tab-active { @apply bg-primary text-white; }
+  .tab-inactive { @apply text-gray-600 hover:bg-gray-100; }
+  .badge { @apply px-2 py-0.5 rounded-full text-xs font-medium; }
+}
+</style>
+</head>
+<body class="bg-gray-bg min-h-screen font-sans">
+<!-- 顶部导航 -->
+<header class="bg-white shadow-sm sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary text-xl">
+        <i class="fa fa-database"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-gray-900">租赁业务管理系统</h1>
+        <p class="text-xs text-gray-500">数据库：landcros-data · 客户/担保人/合同/应收一体化管理</p>
+      </div>
+    </div>
+    <button id="initBtn" class="btn-primary text-sm">
+      <i class="fa fa-magic"></i>一键初始化数据库
+    </button>
+  </div>
+</header>
+
+<!-- 初始化提示弹窗 -->
+<div id="initModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+  <div class="bg-white rounded-xl max-w-lg w-full p-6">
+    <h3 class="text-lg font-bold mb-2">初始化数据库</h3>
+    <p class="text-sm text-gray-600 mb-4">点击确认后将自动创建7张表，并导入示例数据，已存在的重复记录会自动跳过，不会覆盖已有数据。</p>
+    <div class="flex justify-end gap-2">
+      <button class="btn-outline" onclick="document.getElementById('initModal').classList.add('hidden')">取消</button>
+      <button class="btn-primary" id="confirmInit">确认初始化</button>
+    </div>
+  </div>
+</div>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+<!-- 标签页 -->
+<div class="bg-white rounded-xl shadow-sm p-2 mb-6 overflow-x-auto">
+  <div id="tabs" class="flex gap-1">
+    <!-- 动态生成标签 -->
+  </div>
+</div>
+
+<!-- 筛选栏 -->
+<div id="filterBar" class="bg-white rounded-xl shadow-sm p-4 mb-6 hidden">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+    <div>
+      <label class="form-label">关键词搜索</label>
+      <input type="text" id="qInput" class="form-input" placeholder="名称/代码/电话/编号...">
+    </div>
+    <div id="statusFilterWrap" class="hidden">
+      <label class="form-label">合同状态</label>
+      <select id="statusInput" class="form-input">
+        <option value="">全部</option>
+        <option value="未记帐">未记帐</option>
+        <option value="记帐完毕">记帐完毕</option>
+        <option value="还款中">还款中</option>
+        <option value="已结清">已结清</option>
+      </select>
+    </div>
+    <div id="dateFilterWrap" class="hidden">
+      <label class="form-label">租赁开始日（起）</label>
+      <input type="date" id="startFromInput" class="form-input">
+    </div>
+    <div id="dateFilterWrap2" class="hidden">
+      <label class="form-label">租赁开始日（止）</label>
+      <input type="date" id="startToInput" class="form-input">
+    </div>
+    <div id="noFilterWrap" class="hidden">
+      <label class="form-label" id="noLabel">编号/合同号</label>
+      <input type="text" id="noInput" class="form-input" placeholder="输入编号模糊搜索">
+    </div>
+    <div id="renterFilterWrap" class="hidden">
+      <label class="form-label">承租人</label>
+      <input type="text" id="renterInput" class="form-input" placeholder="输入承租人名称模糊搜索">
+    </div>
+  </div>
+  <div class="flex justify-between items-center">
+    <p class="text-sm text-gray-500" id="filterTip">设置筛选条件后点击「查询」显示结果，导出仅导出当前筛选内容</p>
+    <div class="flex gap-2">
+      <button class="btn-outline" onclick="resetFilter()">
+        <i class="fa fa-refresh"></i>重置
+      </button>
+      <button class="btn-primary" onclick="loadData(true)">
+        <i class="fa fa-search"></i>查询
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- 操作栏 -->
+<div id="actionBar" class="flex flex-wrap justify-between items-center gap-3 mb-4 hidden">
+  <div class="flex gap-2 flex-wrap" id="bulkActions" style="display:none">
+    <button class="btn-success text-sm" onclick="bulkStatus('记帐完毕')">
+      <i class="fa fa-check"></i>标记记帐完毕
+    </button>
+    <button class="btn-warning text-sm" onclick="bulkStatus('未记帐')">
+      <i class="fa fa-undo"></i>取消记帐
+    </button>
+    <span class="text-sm text-gray-500 self-center" id="selectedCount">已选 0 项</span>
+  </div>
+  <div class="flex gap-2 ml-auto">
+    <label class="btn-outline text-sm cursor-pointer">
+      <i class="fa fa-upload"></i>导入CSV
+      <input type="file" id="importFile" accept=".csv" class="hidden" onchange="handleImport(event)">
+    </label>
+    <button class="btn-outline text-sm" onclick="handleExport()">
+      <i class="fa fa-download"></i>导出CSV
+    </button>
+    <button class="btn-primary text-sm" onclick="openAddModal()">
+      <i class="fa fa-plus"></i>新增
+    </button>
+  </div>
+</div>
+
+<!-- 数据表格 -->
+<div class="bg-white rounded-xl shadow-sm overflow-hidden">
+  <div id="emptyTip" class="p-12 text-center hidden">
+    <div class="text-gray-400 text-5xl mb-3"><i class="fa fa-search"></i></div>
+    <p class="text-gray-500">请设置筛选条件后点击「查询」显示数据</p>
+  </div>
+  <div id="loading" class="p-12 text-center hidden">
+    <div class="text-primary text-4xl mb-3 animate-spin"><i class="fa fa-circle-o-notch"></i></div>
+    <p class="text-gray-500">加载中...</p>
+  </div>
+  <div class="overflow-x-auto" id="tableWrap" style="display:none">
+    <table class="min-w-full">
+      <thead id="tableHead"></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+</main>
+
+<!-- 新增/编辑弹窗 -->
+<div id="formModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+  <div class="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+    <div class="p-6 border-b sticky top-0 bg-white z-10">
+      <h3 class="text-lg font-bold" id="modalTitle">新增记录</h3>
+      <p class="text-sm text-gray-500 mt-1" id="modalNote"></p>
+    </div>
+    <div class="p-6">
+      <div id="toggleWrap" class="mb-4 hidden">
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="toggleInput" class="w-4 h-4 text-primary">
+          <span class="text-sm" id="toggleLabel"></span>
+        </label>
+      </div>
+      <div id="formGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </div>
+    <div class="p-6 border-t flex justify-end gap-2 sticky bottom-0 bg-white">
+      <button class="btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn-primary" id="saveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast提示 -->
+<div id="toast" class="fixed top-20 right-6 z-50 hidden">
+  <div class="px-4 py-3 rounded-lg shadow-lg flex items-center gap-2" id="toastContent"></div>
+</div>
+
+<script>
+let state = {
+  currentTable: 'customer',
+  tables: null,
+  rows: [],
+  refs: {},
+  editKey: null,
+  selected: new Set(),
+  hasQueried: false
+};
+
+function toast(msg, type = 'success') {
+  const colors = {
+    success: 'bg-success text-white',
+    error: 'bg-danger text-white',
+    warning: 'bg-warning text-white'
+  };
+  const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', warning: 'fa-exclamation-triangle' };
+  const toastEl = document.getElementById('toast');
+  const content = document.getElementById('toastContent');
+  content.className = `px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 ${colors[type]}`;
+  content.innerHTML = `<i class="fa ${icons[type]}"></i><span>${msg}</span>`;
+  toastEl.classList.remove('hidden');
+  setTimeout(() => toastEl.classList.add('hidden'), 3000);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || '请求失败');
+  return data;
+}
+
+function formatMoney(v) {
+  if (v === null || v === undefined || v === '') return '';
+  return Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatPercent(v) {
+  if (v === null || v === undefined || v === '') return '';
+  return (Number(v) * 100).toFixed(2) + '%';
+}
+function formatCell(f, v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (f.type === 'money') return formatMoney(v);
+  if (f.type === 'percent') return formatPercent(v);
+  return v;
+}
+
+// 初始化
+async function init() {
+  try {
+    const data = await api('/api/bootstrap');
+    state.tables = data.tables;
+    // 加载下拉选项引用
+    const refsRes = await api('/api/refs');
+    state.refs = refsRes.refs;
+    renderTabs();
+    switchTable('customer');
+    // 初始化按钮
+    document.getElementById('initBtn').addEventListener('click', () => {
+      document.getElementById('initModal').classList.remove('hidden');
+      document.getElementById('initModal').classList.add('flex');
+    });
+    document.getElementById('confirmInit').addEventListener('click', async () => {
+      try {
+        const res = await api('/api/init', { method: 'POST' });
+        toast(res.message, 'success');
+        document.getElementById('initModal').classList.add('hidden');
+        document.getElementById('initModal').classList.remove('flex');
+        // 重新加载引用
+        const refsRes = await api('/api/refs');
+        state.refs = refsRes.refs;
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function renderTabs() {
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = '';
+  Object.entries(state.tables).forEach(([key, t]) => {
+    const btn = document.createElement('button');
+    btn.className = `tab-btn ${key === state.currentTable ? 'tab-active' : 'tab-inactive'}`;
+    btn.innerHTML = `<i class="fa fa-circle-o mr-1"></i>${t.icon} ${t.label}`;
+    btn.onclick = () => switchTable(key);
+    tabs.appendChild(btn);
+  });
+}
+
+function switchTable(table) {
+  state.currentTable = table;
+  state.rows = [];
+  state.selected.clear();
+  state.editKey = null;
+  state.hasQueried = false;
+  renderTabs();
+  renderFilterBar();
+  renderTable();
+}
+
+function renderFilterBar() {
+  const t = state.tables[state.currentTable];
+  const bar = document.getElementById('filterBar');
+  bar.classList.remove('hidden');
+  document.getElementById('actionBar').classList.remove('hidden');
+  // 重置筛选输入
+  ['qInput','statusInput','startFromInput','startToInput','noInput','renterInput'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  // 根据表显示对应筛选项
+  const hasStatus = t.fields.some(f => f.name === '合同状态');
+  const hasDate = t.fields.some(f => f.name === '租赁开始日');
+  const hasNo = t.fields.some(f => f.name === '编号') || t.fields.some(f => f.name === '合同编号');
+  const hasRenter = t.fields.some(f => f.name === '承租人');
+
+  document.getElementById('statusFilterWrap').classList.toggle('hidden', !hasStatus);
+  document.getElementById('dateFilterWrap').classList.toggle('hidden', !hasDate);
+  document.getElementById('dateFilterWrap2').classList.toggle('hidden', !hasDate);
+  document.getElementById('noFilterWrap').classList.toggle('hidden', !hasNo);
+  document.getElementById('renterFilterWrap').classList.toggle('hidden', !hasRenter);
+  document.getElementById('noLabel').textContent = state.currentTable === 'AR-Ledger' ? '合同号' : '编号';
+
+  // 批量操作按钮只在合同表显示
+  document.getElementById('bulkActions').style.display = state.currentTable === 'contract' ? 'flex' : 'none';
+  document.getElementById('selectedCount').textContent = '已选 0 项';
+
+  document.getElementById('filterTip').textContent = '设置筛选条件后点击「查询」显示结果，导出仅导出当前筛选内容';
+  document.getElementById('emptyTip').classList.remove('hidden');
+  document.getElementById('tableWrap').style.display = 'none';
+  document.getElementById('loading').classList.add('hidden');
+}
+
+function resetFilter() {
+  ['qInput','statusInput','startFromInput','startToInput','noInput','renterInput'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  state.rows = [];
+  state.hasQueried = false;
+  document.getElementById('emptyTip').classList.remove('hidden');
+  document.getElementById('tableWrap').style.display = 'none';
+}
+
+async function loadData(showLoading = false) {
+  state.hasQueried = true;
+  const params = new URLSearchParams();
+  params.set('table', state.currentTable);
+  const q = document.getElementById('qInput').value.trim();
+  const status = document.getElementById('statusInput').value;
+  const startFrom = document.getElementById('startFromInput').value;
+  const startTo = document.getElementById('startToInput').value;
+  const no = document.getElementById('noInput').value.trim();
+  const renter = document.getElementById('renterInput').value.trim();
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  if (startFrom) params.set('start_from', startFrom);
+  if (startTo) params.set('start_to', startTo);
+  if (no) params.set('no', no);
+  if (renter) params.set('renter', renter);
+
+  try {
+    if (showLoading) {
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('emptyTip').classList.add('hidden');
+    }
+    const data = await api('/api/list?' + params.toString());
+    state.rows = data.rows || [];
+    renderTable();
+  } catch (e) {
+    toast(e.message, 'error');
+    document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+function renderTable() {
+  const t = state.tables[state.currentTable];
+  const wrap = document.getElementById('tableWrap');
+  const head = document.getElementById('tableHead');
+  const body = document.getElementById('tableBody');
+  const empty = document.getElementById('emptyTip');
+  const loading = document.getElementById('loading');
+  loading.classList.add('hidden');
+
+  if (!state.hasQueried || state.rows.length === 0) {
+    empty.classList.remove('hidden');
+    wrap.style.display = 'none';
+    if (state.hasQueried && state.rows.length === 0) {
+      empty.querySelector('p').textContent = '未查询到符合条件的数据';
+    } else {
+      empty.querySelector('p').textContent = '请设置筛选条件后点击「查询」显示数据';
+    }
+    return;
+  }
+  empty.classList.add('hidden');
+  wrap.style.display = 'block';
+
+  // 表头：合同表加复选框
+  let headHtml = '<tr>';
+  if (state.currentTable === 'contract') {
+    headHtml += '<th class="table-th w-10"><input type="checkbox" id="checkAll" onchange="toggleCheckAll(this)"></th>';
+  }
+  t.fields.forEach(f => {
+    headHtml += `<th class="table-th">${f.label}</th>`;
+  });
+  headHtml += '<th class="table-th w-32">操作</th></tr>';
+  head.innerHTML = headHtml;
+
+  // 表体
+  let bodyHtml = '';
+  state.rows.forEach(row => {
+    bodyHtml += '<tr class="hover:bg-gray-50">';
+    if (state.currentTable === 'contract') {
+      const checked = state.selected.has(row.__key) ? 'checked' : '';
+      bodyHtml += `<td class="table-td"><input type="checkbox" ${checked} onchange="toggleSelect('${row.__key}', this)"></td>`;
+    }
+    t.fields.forEach(f => {
+      const val = formatCell(f, row[f.name]);
+      // 状态字段加badge
+      if (f.name === '合同状态') {
+        const cls = val === '记帐完毕' ? 'bg-success/10 text-success' : val === '未记帐' ? 'bg-warning/10 text-warning' : 'bg-gray-100 text-gray-600';
+        bodyHtml += `<td class="table-td"><span class="badge ${cls}">${val}</span></td>`;
+      } else {
+        bodyHtml += `<td class="table-td">${val}</td>`;
+      }
+    });
+    bodyHtml += `<td class="table-td">
+      <button class="text-primary hover:text-primary/80 mr-3" onclick="openEditModal('${row.__key}')"><i class="fa fa-pencil"></i></button>
+      <button class="text-danger hover:text-danger/80" onclick="handleDelete('${row.__key}')"><i class="fa fa-trash"></i></button>
+    </td></tr>`;
+  });
+  body.innerHTML = bodyHtml;
+  updateSelectedCount();
+}
+
+function toggleCheckAll(el) {
+  if (el.checked) state.rows.forEach(r => state.selected.add(r.__key));
+  else state.selected.clear();
+  renderTable();
+}
+function toggleSelect(key, el) {
+  if (el.checked) state.selected.add(key);
+  else state.selected.delete(key);
+  updateSelectedCount();
+}
+function updateSelectedCount() {
+  document.getElementById('selectedCount').textContent = `已选 ${state.selected.size} 项`;
+}
+
+async function bulkStatus(to) {
+  if (state.selected.size === 0) { toast('请先勾选要操作的合同', 'warning'); return; }
+  if (!confirm(`确定要将选中的 ${state.selected.size} 条合同标记为「${to}」吗？对应应收数据会同步更新状态。`)) return;
+  try {
+    const keys = Array.from(state.selected);
+    await api('/api/bulk-status', {
+      method: 'POST',
+      body: JSON.stringify({ table: state.currentTable, keys, to })
+    });
+    toast(`已成功更新状态为「${to}」`, 'success');
+    state.selected.clear();
+    loadData();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// 新增/编辑表单
+async function openAddModal() {
+  state.editKey = null;
+  const t = state.tables[state.currentTable];
+  document.getElementById('modalTitle').textContent = `新增${t.label}`;
+  document.getElementById('modalNote').textContent = t.formNote || '';
+  renderForm({});
+  document.getElementById('formModal').classList.remove('hidden');
+  document.getElementById('formModal').classList.add('flex');
+}
+
+async function openEditModal(key) {
+  state.editKey = key;
+  const t = state.tables[state.currentTable];
+  const row = state.rows.find(r => String(r.__key) === String(key));
+  if (!row) return;
+  document.getElementById('modalTitle').textContent = `编辑${t.label}`;
+  document.getElementById('modalNote').textContent = t.formNote || '';
+  renderForm(row);
+  document.getElementById('formModal').classList.remove('hidden');
+  document.getElementById('formModal').classList.add('flex');
+}
+
+function renderForm(data) {
+  const t = state.tables[state.currentTable];
+  const grid = document.getElementById('formGrid');
+  const toggleWrap = document.getElementById('toggleWrap');
+  // 售后回租开关
+  if (t.toggle) {
+    toggleWrap.classList.remove('hidden');
+    document.getElementById('toggleLabel').textContent = t.toggle.label;
+    document.getElementById('toggleInput').checked = !!data.__sublease;
+  } else {
+    toggleWrap.classList.add('hidden');
+  }
+  grid.innerHTML = '';
+  t.fields.forEach(f => {
+    if (f.auto) {
+      // 自动字段只读显示
+      const val = data[f.name] || (f.hint || '自动生成');
+      grid.innerHTML += `
+      <div>
+        <label class="form-label">${f.label}</label>
+        <input type="text" class="form-input bg-gray-50" value="${val}" disabled>
+      </div>`;
+      return;
+    }
+    let input = '';
+    const val = data[f.name] || '';
+    // 判断是否禁用
+    let disabled = '';
+    if (f.disabledWhen) {
+      const cond = f.disabledWhen;
+      const fieldVal = data[cond.field] || (f.default || '');
+      if (String(fieldVal) === cond.value) disabled = 'disabled';
+    }
+    if (f.type === 'select') {
+      let options = `<option value="">请选择</option>`;
+      f.options.forEach(o => {
+        const selected = String(val) === o ? 'selected' : '';
+        options += `<option value="${o}" ${selected}>${o}</option>`;
+      });
+      // 如果是关联下拉，从refs里取选项
+      if (f.ref && state.refs[f.ref.table]?.[f.ref.field]) {
+        options = `<option value="">请选择</option>`;
+        state.refs[f.ref.table][f.ref.field].forEach(o => {
+          const selected = String(val) === o ? 'selected' : '';
+          options += `<option value="${o}" ${selected}>${o}</option>`;
+        });
+      }
+      input = `<select id="field_${f.name}" class="form-input" ${disabled}>${options}</select>`;
+    } else if (f.type === 'textarea') {
+      input = `<textarea id="field_${f.name}" rows="2" class="form-input" ${disabled}>${val}</textarea>`;
+    } else if (f.type === 'date') {
+      input = `<input type="date" id="field_${f.name}" class="form-input" value="${val}" ${disabled}>`;
+    } else {
+      input = `<input type="text" id="field_${f.name}" class="form-input" value="${val}" placeholder="${f.hint || ''}" ${disabled}>`;
+    }
+    const required = f.required ? '<span class="text-danger">*</span>' : '';
+    let colClass = 'md:col-span-1';
+    if (f.name === '承租人' || f.name === '承租人地址' || f.name === '卖方地址' || f.name === '产品编号' || f.name === '交付地') {
+      colClass = 'md:col-span-2';
+    }
+    grid.innerHTML += `
+    <div class="${colClass}">
+      <label class="form-label">${f.label} ${required}</label>
+      ${input}
+      ${f.hint ? `<p class="text-xs text-gray-400 mt-1">${f.hint}</p>` : ''}
+    </div>`;
+  });
+  // 性质切换时锁定法人字段（客户/担保人）
+  if (state.currentTable === 'customer') {
+    const natureSel = document.getElementById('field_性质');
+    const toggleLegal = () => {
+      const isPersonal = natureSel.value === '个人';
+      ['法人姓名','法人证件号','法人电话'].forEach(fname => {
+        const el = document.getElementById(`field_${fname}`);
+        if (el) el.disabled = isPersonal;
+      });
+    };
+    natureSel.addEventListener('change', toggleLegal);
+  }
+  if (state.currentTable === 'guarantor') {
+    const natureSel = document.getElementById('field_担保人性质');
+    const toggleGuarantorLegal = () => {
+      const isPersonal = natureSel.value === '个人';
+      const el = document.getElementById('field_担保法人姓名');
+      if (el) el.disabled = isPersonal;
+    };
+    natureSel.addEventListener('change', toggleGuarantorLegal);
+  }
+  // 客户代码选完自动填充承租人
+  if (state.currentTable === 'contract') {
+    const custSel = document.getElementById('field_客户代码');
+    custSel.addEventListener('change', async () => {
+      const code = custSel.value;
+      if (!code) return;
+      // 查对应客户的承租人
+      const res = await api(`/api/list?table=customer&q=${code}`);
+      const cust = res.rows.find(r => r.客户代码 === code);
+      if (cust) document.getElementById('field_承租人').value = cust.承租人 || '';
+    });
+  }
+}
+
+function closeModal() {
+  document.getElementById('formModal').classList.add('hidden');
+  document.getElementById('formModal').classList.remove('flex');
+}
+
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const t = state.tables[state.currentTable];
+  const data = {};
+  let hasError = false;
+  const sublease = document.getElementById('toggleInput').checked;
+  t.fields.forEach(f => {
+    if (f.auto) return;
+    const el = document.getElementById(`field_${f.name}`);
+    if (!el) { data[f.name] = null; return; }
+    // 被disabled的字段传null
+    if (el.disabled) { data[f.name] = null; return; }
+    data[f.name] = el.value.trim();
+  });
+  try {
+    await api('/api/save', {
+      method: 'POST',
+      body: JSON.stringify({ table: state.currentTable, key: state.editKey, data, sublease })
+    });
+    toast(state.editKey ? '修改成功' : '新增成功', 'success');
+    closeModal();
+    // 重新加载下拉选项
+    const refsRes = await api('/api/refs');
+    state.refs = refsRes.refs;
+    loadData();
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+async function handleDelete(key) {
+  if (!confirm('确定要删除这条记录吗？删除后无法恢复。')) return;
+  try {
+    await api(`/api/delete?table=${state.currentTable}&key=${key}`, { method: 'POST' });
+    toast('删除成功', 'success');
+    loadData();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function handleImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('table', state.currentTable);
+  formData.append('file', file);
+  try {
+    const res = await fetch('/api/import', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      toast(data.message, 'success');
+      if (data.errors?.length) {
+        alert('导入完成，以下行有问题：\n' + data.errors.join('\n'));
+      }
+      const refsRes = await api('/api/refs');
+      state.refs = refsRes.refs;
+      loadData();
+    } else {
+      toast(data.message, 'error');
+    }
+  } catch (e) { toast('导入失败：' + e.message, 'error'); }
+  e.target.value = '';
+}
+
+async function handleExport() {
+  if (!state.hasQueried) { toast('请先查询后再导出', 'warning'); return; }
+  const params = new URLSearchParams();
+  params.set('table', state.currentTable);
+  const q = document.getElementById('qInput').value.trim();
+  const status = document.getElementById('statusInput').value;
+  const startFrom = document.getElementById('startFromInput').value;
+  const startTo = document.getElementById('startToInput').value;
+  const no = document.getElementById('noInput').value.trim();
+  const renter = document.getElementById('renterInput').value.trim();
+  if (q) params.set('q', q);
+  if (status) params.set('status', status);
+  if (startFrom) params.set('start_from', startFrom);
+  if (startTo) params.set('start_to', startTo);
+  if (no) params.set('no', no);
+  if (renter) params.set('renter', renter);
+  window.open('/api/export?' + params.toString(), '_blank');
+}
+
+init();
+</script>
+</body>
+</html>
